@@ -39,7 +39,7 @@ export function Scoreboard({ state }: { state: GameState }) {
       </table>
       <div className="count-row">
         <div className="pill">
-          Inning <b>{state.half === "top" ? "▲" : "▼"} {state.inning}</b>
+          Inning <b>{state.half === "top" ? "Top" : "Bot"} {state.inning}</b>
         </div>
         <div className="pill">
           Count <b>{state.balls}-{state.strikes}</b>

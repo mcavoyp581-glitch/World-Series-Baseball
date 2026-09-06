@@ -131,6 +131,7 @@ export interface GameState {
   recap: string | null;
   lastPlay: string | null;
   pitchType: PitchType | null;
+  eventSeq: number;
 }
 
 export type GameAction =

@@ -69,8 +69,9 @@ function roll(state: GameState): number {
 }
 
 function addLine(state: GameState, text: string, tone: CommentaryLine["tone"] = "call"): void {
+  state.eventSeq += 1;
   state.commentary.unshift({
-    id: `${state.rngState}-${state.commentary.length}`,
+    id: `call-${state.eventSeq}`,
     text,
     tone,
     inning: state.inning,
@@ -177,6 +178,7 @@ export function createGame(input: {
     recap: null,
     lastPlay: null,
     pitchType: null,
+    eventSeq: 0,
   };
   addLine(state, radioOpen(`${input.away.city} ${input.away.name}`, `${input.home.city} ${input.home.name}`, input.home.park), "radio");
   addLine(state, batterIntro(currentBatter(state), currentPitcher(state)), "radio");
@@ -325,71 +327,40 @@ function matchup(state: GameState, approach: Approach, plan: PitchPlan): { zone:
   return { zone, swing, contact, power };
 }
 
+function creditHit(off: TeamGame, pLine: PitcherLine, line: BatterLine): void {
+  line.ab += 1;
+  line.h += 1;
+  off.hits += 1;
+  pLine.hits += 1;
+}
+
 function putInPlay(state: GameState, contact: number, power: number): { runs: number; hits: number } {
   const batter = currentBatter(state);
   const pitcher = currentPitcher(state);
   const off = offense(state);
   const def = defense(state);
-  const quality = contact + (roll(state) - 0.45);
+  const quality = contact + (roll(state) - 0.5) * 0.7;
   const lift = roll(state);
-  const hard = quality + power + (roll(state) - 0.5);
-  const error = roll(state) < Math.max(0.012, (86 - 70) / 900);
+  const smash = quality + power + (roll(state) - 0.5) * 0.55;
   const runner = { playerId: batter.id, responsiblePitcherId: pitcher.id };
   const line = batterLine(off, batter.id);
   const pLine = pitcherLine(def, pitcher.id);
   let runs = 0;
   let hits = 0;
 
-  if (error) {
+  if (roll(state) < 0.016) {
     def.errors += 1;
     line.ab += 1;
     const [first] = state.bases;
-    if (first && roll(state) < 0.45) occupy(state, 1, first);
+    if (first && roll(state) < 0.4) occupy(state, 1, first);
     occupy(state, 0, runner);
     addLine(state, `Chopper to the left side — and it gets through! E on the infield. ${batter.name} reaches.`, "crowd");
     return { runs, hits };
   }
 
-  if (lift > 0.62 && state.bases[2] && state.outs < 2 && quality > -0.05 && hard < 0.42) {
-    line.ab += 1;
-    line.sf += 1;
-    const tagged = findPlayer(state, state.bases[2].playerId);
-    scoreRun(state, state.bases[2], 1);
-    occupy(state, 2, null);
-    runs += 1;
-    recordOut(state, 1);
-    addLine(state, `Sacrifice fly. ${tagged.name} tags and the run scores.`, "score");
-    return { runs, hits };
-  }
-
-  if (lift < 0.38 && state.bases[0] && state.outs < 2 && quality < 0.12) {
-    line.ab += 1;
-    recordOut(state, state.outs === 0 && roll(state) < 0.62 ? 2 : 1);
-    const [first, second, third] = state.bases;
-    if (state.outs >= 3) {
-      addLine(state, `Ground ball, two gone if they turn it — double play! Inning over.`, "call");
-      occupy(state, 0, null);
-      occupy(state, 1, null);
-      return { runs, hits };
-    }
-    occupy(state, 0, null);
-    if (third && roll(state) < 0.35) {
-      scoreRun(state, third, 0);
-      occupy(state, 2, null);
-      runs += 1;
-    }
-    if (second) occupy(state, 2, second);
-    occupy(state, 1, first);
-    addLine(state, `Ground ball, they get the lead runner. ${batter.name} is out at first.`, "call");
-    return { runs, hits };
-  }
-
-  if (hard > 0.62 && lift > 0.48) {
-    line.ab += 1;
-    line.h += 1;
+  if (smash > 0.38 && lift > 0.6 && roll(state) < 0.055 + Math.max(0, power) * 0.1) {
+    creditHit(off, pLine, line);
     line.hr += 1;
-    off.hits += 1;
-    pLine.hits += 1;
     pLine.homeRuns += 1;
     hits += 1;
     const onBase = clearBases(state);
@@ -404,12 +375,53 @@ function putInPlay(state: GameState, contact: number, power: number): { runs: nu
     return { runs, hits };
   }
 
-  if (hard > 0.38 && lift > 0.55 && batter.ratings.speed > 78 && roll(state) < 0.18) {
+  const babip = 0.278 + quality * 0.1 + batter.ratings.speed / 900;
+  const isHit = roll(state) < babip;
+
+  if (!isHit) {
+    if (lift > 0.64 && state.bases[2] && state.outs < 2 && quality > -0.12) {
+      line.ab += 1;
+      line.sf += 1;
+      const tagged = findPlayer(state, state.bases[2].playerId);
+      scoreRun(state, state.bases[2], 1);
+      occupy(state, 2, null);
+      runs += 1;
+      recordOut(state, 1);
+      addLine(state, `Sacrifice fly. ${tagged.name} tags and the run scores.`, "score");
+      return { runs, hits };
+    }
+    if (lift < 0.4 && state.bases[0] && state.outs < 2 && roll(state) < 0.42) {
+      line.ab += 1;
+      recordOut(state, state.outs === 0 && roll(state) < 0.55 ? 2 : 1);
+      const [first, second, third] = state.bases;
+      if (state.outs >= 3) {
+        addLine(state, `Ground ball, two gone if they turn it — double play! Inning over.`, "call");
+        occupy(state, 0, null);
+        occupy(state, 1, null);
+        return { runs, hits };
+      }
+      occupy(state, 0, null);
+      if (third && roll(state) < 0.28) {
+        scoreRun(state, third, 0);
+        occupy(state, 2, null);
+        runs += 1;
+      }
+      if (second) occupy(state, 2, second);
+      occupy(state, 1, first);
+      addLine(state, `Ground ball, they get the lead runner. ${batter.name} is out at first.`, "call");
+      return { runs, hits };
+    }
     line.ab += 1;
-    line.h += 1;
+    recordOut(state, 1);
+    if (lift > 0.55) addLine(state, `${batter.name} lifts one to the warning track — caught. Out number ${Math.min(state.outs, 3)}.`, "call");
+    else addLine(state, `Chopper, 6-3, ${batter.name} is retired.`, "call");
+    return { runs, hits };
+  }
+
+  const extra = roll(state);
+  if (smash > 0.22 && lift > 0.5 && batter.ratings.speed > 80 && extra < 0.05) {
+    creditHit(off, pLine, line);
     line.triples += 1;
-    off.hits += 1;
-    pLine.hits += 1;
     hits += 1;
     const [first, second, third] = state.bases;
     if (third) {
@@ -429,12 +441,9 @@ function putInPlay(state: GameState, contact: number, power: number): { runs: nu
     return { runs, hits };
   }
 
-  if (hard > 0.28 && lift > 0.36) {
-    line.ab += 1;
-    line.h += 1;
+  if (smash > 0.12 && lift > 0.34 && extra < 0.2) {
+    creditHit(off, pLine, line);
     line.doubles += 1;
-    off.hits += 1;
-    pLine.hits += 1;
     hits += 1;
     const [first, second, third] = state.bases;
     if (third) {
@@ -445,45 +454,32 @@ function putInPlay(state: GameState, contact: number, power: number): { runs: nu
       scoreRun(state, second, 1);
       runs += 1;
     }
-    occupy(state, 2, first && batter.ratings.speed > 70 && roll(state) < 0.35 ? first : null);
-    if (first && !state.bases[2]) occupy(state, 2, first);
+    occupy(state, 2, first ?? null);
     occupy(state, 1, runner);
     occupy(state, 0, null);
     addLine(state, `Lined into the gap! ${batter.name} is in with a stand-up double.`, "crowd");
     return { runs, hits };
   }
 
-  if (quality > -0.02 || roll(state) < 0.28 + batter.ratings.speed / 400) {
-    line.ab += 1;
-    line.h += 1;
-    off.hits += 1;
-    pLine.hits += 1;
-    hits += 1;
-    const [first, second, third] = state.bases;
-    if (third) {
-      scoreRun(state, third, 1);
-      runs += 1;
-      occupy(state, 2, null);
-    }
-    if (second) {
-      if (batter.ratings.speed > 74 && roll(state) < 0.35) {
-        scoreRun(state, second, 1);
-        runs += 1;
-        occupy(state, 1, null);
-      } else {
-        occupy(state, 2, second);
-      }
-    }
-    occupy(state, 1, first);
-    occupy(state, 0, runner);
-    addLine(state, `Base hit! ${batter.name} punches it through. ${runs ? `${runs} run${runs === 1 ? "" : "s"} in.` : "Man aboard."}`, "call");
-    return { runs, hits };
+  creditHit(off, pLine, line);
+  hits += 1;
+  const [first, second, third] = state.bases;
+  if (third) {
+    scoreRun(state, third, 1);
+    runs += 1;
+    occupy(state, 2, null);
   }
-
-  line.ab += 1;
-  recordOut(state, 1);
-  if (lift > 0.55) addLine(state, `${batter.name} lifts one to the warning track — caught. Out number ${Math.min(state.outs, 3)}.`, "call");
-  else addLine(state, `Chopper, 6-3, ${batter.name} is retired.`, "call");
+  if (second) {
+    if (batter.ratings.speed > 78 && roll(state) < 0.22) {
+      scoreRun(state, second, 1);
+      runs += 1;
+    } else {
+      occupy(state, 2, second);
+    }
+  }
+  occupy(state, 1, first);
+  occupy(state, 0, runner);
+  addLine(state, `Base hit! ${batter.name} punches it through. ${runs ? `${runs} run${runs === 1 ? "" : "s"} in.` : "Man aboard."}`, "call");
   return { runs, hits };
 }
 

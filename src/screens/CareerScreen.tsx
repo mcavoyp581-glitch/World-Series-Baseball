@@ -147,8 +147,8 @@ export function CareerHub({
         <article className="panel">
           <h3>Clubhouse notes</h3>
           <ol>
-            {save.log.slice(0, 8).map((line) => (
-              <li key={line}>{line}</li>
+            {save.log.slice(0, 8).map((line, idx) => (
+              <li key={`${idx}-${line}`}>{line}</li>
             ))}
           </ol>
         </article>

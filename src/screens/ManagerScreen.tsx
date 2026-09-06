@@ -234,8 +234,8 @@ export function ManagerHub({
             </button>
           </div>
           <ol>
-            {save.log.slice(0, 6).map((line) => (
-              <li key={line}>{line}</li>
+            {save.log.slice(0, 6).map((line, idx) => (
+              <li key={`${idx}-${line}`}>{line}</li>
             ))}
           </ol>
         </article>

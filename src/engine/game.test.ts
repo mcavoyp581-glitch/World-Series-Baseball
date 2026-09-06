@@ -63,6 +63,24 @@ describe("game engine", () => {
     expect(state.commentary.length).toBeGreaterThan(3);
   });
 
+  it("keeps team scoring in a believable range", () => {
+    const seeds = [7, 21, 88, 404, 2024, 777, 314, 999];
+    const totals = seeds.map((seed) => {
+      const game = playFullGame(
+        createGame({
+          away: teamById(league, "knights"),
+          home: teamById(league, "beacons"),
+          seed,
+        }),
+      );
+      return totalRuns(game.home) + totalRuns(game.away);
+    });
+    const avg = totals.reduce((sum, n) => sum + n, 0) / totals.length;
+    expect(avg).toBeGreaterThan(3);
+    expect(avg).toBeLessThan(16);
+    expect(Math.max(...totals)).toBeLessThan(28);
+  });
+
   it("can play extra innings when tied late", () => {
     const finished = playFullGame(
       createGame({
